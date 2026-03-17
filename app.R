@@ -7,11 +7,12 @@ try(library(ggplot2))
 try(library(shapviz))
 try(library(kernelshap))
 
-# 🔧 修复：配置 Shiny 连接参数以支持长计算
+# 🔧 修复：配置 Shiny 连接参数以支持长计算（新方法，适用 Shiny 1.5+）
 # 这些配置确保长时间的 SHAP 计算不会因为超时而断开连接
 options(
   shiny.maxRequestSize = 100 * 1024^2,    # 最大请求大小：100MB
-  shiny.timeout = 180,                     # 连接超时时间：180 秒（从默认 30-60 秒增加）
+  shiny.session.timeout = 300 * 1000,     # 🔧 新方法：会话超时 5 分钟（毫秒），替代已弃用的 shiny.timeout
+  shiny.ping.interval = 15 * 1000,        # 🔧 心跳间隔：每 15 秒发送心跳，保持 WebSocket 连接活跃
   shiny.reactlog = FALSE                   # 禁用反应日志以节省内存
 )
 
@@ -374,7 +375,10 @@ ui <- fluidPage(
              
              div(class = "card",
                  div(class = "section-title", "Individual SHAP Analysis"),
+                 # 🔧 修复：添加进度条和状态指示器
                  uiOutput("shap_loading_indicator"),
+                 uiOutput("shap_progress_bar"),  # 新增：进度条
+                 uiOutput("shap_status_message"),  # 新增：状态消息
                  plotOutput("waterfall", height = "310px"),
                  div(style = "padding-left: 150px;", plotOutput("force_plot", height = "220px"))
              )
