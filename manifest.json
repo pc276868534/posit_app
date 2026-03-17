@@ -9,6 +9,11 @@
     "content_category": null,
     "has_parameters": false
   },
+  "environment": {
+    "r": {
+      "requires": ">= 4.0"
+    }
+  },
   "packages": {
     "Matrix": {
       "Source": "CRAN",
@@ -142,6 +147,36 @@
         "Repository": "CRAN",
         "Date/Publication": "2026-01-10 09:50:02 UTC",
         "Built": "R 4.4.3; x86_64-w64-mingw32; 2026-03-12 14:08:53 UTC; windows",
+        "Archs": "x64"
+      }
+    },
+    "RcppEigen": {
+      "Source": "CRAN",
+      "Repository": "https://cloud.r-project.org",
+      "description": {
+        "Package": "RcppEigen",
+        "Type": "Package",
+        "Title": "'Rcpp' Integration for the 'Eigen' Templated Linear Algebra\nLibrary",
+        "Version": "0.3.4.0.2",
+        "Date": "2024-08-23",
+        "Authors@R": "c(person(\"Doug\", \"Bates\", role = \"aut\",\n                    comment = c(ORCID = \"0000-0001-8316-9503\")),\n             person(\"Dirk\", \"Eddelbuettel\", role = c(\"aut\", \"cre\"), email = \"edd@debian.org\",\n                    comment = c(ORCID = \"0000-0001-6419-907X\")),\n             person(\"Romain\", \"Francois\", role = \"aut\",\n                    comment = c(ORCID = \"0000-0002-2444-4226\")),\n             person(\"Yixuan\", \"Qiu\", role = \"aut\",\n                    comment = c(ORCID = \"0000-0003-0109-6692\")),\n             person(\"Authors of\", \"Eigen\", role = \"cph\",\n                    comment = \"Authorship and copyright in included Eigen library as detailed in inst/COPYRIGHTS\"))",
+        "Copyright": "See the file COPYRIGHTS for various Eigen copyright details",
+        "Description": "R and 'Eigen' integration using 'Rcpp'.\n 'Eigen' is a C++ template library for linear algebra: matrices, vectors,\n numerical solvers and related algorithms.  It supports dense and sparse\n matrices on integer, floating point and complex numbers, decompositions of\n such matrices, and solutions of linear systems. Its performance on many\n algorithms is comparable with some of the best implementations based on\n 'Lapack' and level-3 'BLAS'. The 'RcppEigen' package includes the header\n files from the 'Eigen' C++ template library. Thus users do not need to\n install 'Eigen' itself in order to use 'RcppEigen'. Since version 3.1.1,\n 'Eigen' is licensed under the Mozilla Public License (version 2); earlier\n version were licensed under the GNU LGPL version 3 or later. 'RcppEigen'\n (the 'Rcpp' bindings/bridge to 'Eigen') is licensed under the GNU GPL\n version 2 or later, as is the rest of 'Rcpp'.",
+        "License": "GPL (>= 2) | file LICENSE",
+        "LazyLoad": "yes",
+        "Depends": "R (>= 3.6.0)",
+        "LinkingTo": "Rcpp",
+        "Imports": "Rcpp (>= 0.11.0), stats, utils",
+        "Suggests": "Matrix, inline, tinytest, pkgKitten, microbenchmark",
+        "URL": "https://github.com/RcppCore/RcppEigen,\nhttps://dirk.eddelbuettel.com/code/rcpp.eigen.html",
+        "BugReports": "https://github.com/RcppCore/RcppEigen/issues",
+        "NeedsCompilation": "yes",
+        "Packaged": "2024-08-23 18:11:22 UTC; edd",
+        "Author": "Doug Bates [aut] (<https://orcid.org/0000-0001-8316-9503>),\n  Dirk Eddelbuettel [aut, cre] (<https://orcid.org/0000-0001-6419-907X>),\n  Romain Francois [aut] (<https://orcid.org/0000-0002-2444-4226>),\n  Yixuan Qiu [aut] (<https://orcid.org/0000-0003-0109-6692>),\n  Authors of Eigen [cph] (Authorship and copyright in included Eigen\n    library as detailed in inst/COPYRIGHTS)",
+        "Maintainer": "Dirk Eddelbuettel <edd@debian.org>",
+        "Repository": "CRAN",
+        "Date/Publication": "2024-08-24 06:30:02 UTC",
+        "Built": "R 4.4.3; x86_64-w64-mingw32; 2026-03-12 14:55:27 UTC; windows",
         "Archs": "x64"
       }
     },
@@ -1979,6 +2014,36 @@
         "Built": "R 4.4.3; ; 2026-03-12 15:17:21 UTC; windows"
       }
     },
+    "ranger": {
+      "Source": "CRAN",
+      "Repository": "https://cloud.r-project.org",
+      "description": {
+        "Package": "ranger",
+        "Type": "Package",
+        "Title": "A Fast Implementation of Random Forests",
+        "Version": "0.18.0",
+        "Date": "2026-01-15",
+        "Authors@R": "c(\n    person(\"Marvin N.\", \"Wright\", email = \"cran@wrig.de\", role = c(\"aut\", \"cre\")),\n    person(\"Stefan\", \"Wager\", role = \"ctb\"),\n    person(\"Philipp\", \"Probst\", role = \"ctb\"))",
+        "Description": "A fast implementation of Random Forests, particularly suited for high\n          dimensional data. Ensembles of classification, regression, survival and\n          probability prediction trees are supported. Data from genome-wide association\n          studies can be analyzed efficiently. In addition to data frames, datasets of\n          class 'gwaa.data' (R package 'GenABEL') and 'dgCMatrix' (R package 'Matrix') \n          can be directly analyzed.",
+        "License": "GPL-3",
+        "Imports": "Rcpp (>= 0.11.2), Matrix",
+        "LinkingTo": "Rcpp, RcppEigen",
+        "Depends": "R (>= 3.1)",
+        "Suggests": "survival, testthat",
+        "Encoding": "UTF-8",
+        "RoxygenNote": "7.3.3",
+        "URL": "https://imbs-hl.github.io/ranger/,\nhttps://github.com/imbs-hl/ranger",
+        "BugReports": "https://github.com/imbs-hl/ranger/issues",
+        "NeedsCompilation": "yes",
+        "Packaged": "2026-01-16 14:12:01 UTC; wright",
+        "Author": "Marvin N. Wright [aut, cre],\n  Stefan Wager [ctb],\n  Philipp Probst [ctb]",
+        "Maintainer": "Marvin N. Wright <cran@wrig.de>",
+        "Repository": "CRAN",
+        "Date/Publication": "2026-01-16 16:30:02 UTC",
+        "Built": "R 4.4.3; x86_64-w64-mingw32; 2026-03-12 15:17:59 UTC; windows",
+        "Archs": "x64"
+      }
+    },
     "rappdirs": {
       "Source": "CRAN",
       "Repository": "https://cloud.r-project.org",
@@ -2511,7 +2576,10 @@
       "checksum": "de2c51f3f4e1f1885ba9740b34053270"
     },
     "app.R": {
-      "checksum": "b78128eeee06779f2e89faa279e2aff7"
+      "checksum": "6dfcd4bedf0616af34de422a13d3ab88"
+    },
+    "DESCRIPTION": {
+      "checksum": "5d408f01cf1bd757c0521b2d44d9034b"
     },
     "image_ChooseModel.RData": {
       "checksum": "d845149057ff5c36ba03f69fb7cf9e1b"

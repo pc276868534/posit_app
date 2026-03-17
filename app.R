@@ -6,6 +6,7 @@ try(library(mlr3pipelines))
 try(library(ggplot2))
 try(library(shapviz))
 try(library(kernelshap))
+try(library(ranger))  # 🔧 必需：随机森林学习器依赖
 
 # 🔧 修复：配置 Shiny 连接参数以支持长计算（新方法，适用 Shiny 1.5+）
 # 这些配置确保长时间的 SHAP 计算不会因为超时而断开连接
@@ -512,10 +513,33 @@ server <- function(input, output, session) {
       }
     }
     
-    # 进行预测（快速）
-    pred <- model_ChooseModel_aftertune$predict_newdata(input_df)
-    prob <- round(as.numeric(as.data.table(pred)$prob.1), 3)
-    pred_result(prob)
+    # 🔧 修复：进行预测（快速）并添加错误处理
+    tryCatch({
+      pred <- model_ChooseModel_aftertune$predict_newdata(input_df)
+      prob <- round(as.numeric(as.data.table(pred)$prob.1), 3)
+      pred_result(prob)
+    }, error = function(e) {
+      error_msg <- conditionMessage(e)
+      if (grepl("ranger", error_msg, ignore.case = TRUE)) {
+        # ranger 包缺失的特殊处理
+        output$prob_text <- renderUI({
+          div(style = "color: #d9534f; padding: 20px; font-weight: bold;",
+              "❌ Error: The 'ranger' package is required but not available in the deployment environment.",
+              br(),
+              "Solution: Add 'ranger' to your DESCRIPTION or renv.lock file.")
+        })
+      } else {
+        output$prob_text <- renderUI({
+          div(style = "color: #d9534f; padding: 20px; font-weight: bold;",
+              paste("❌ Prediction Error:", error_msg))
+        })
+      }
+      shap_computing(FALSE)
+      # 使用默认值以防止进一步错误
+      pred_result(NA)
+      return()
+    })
+    
     
     # 立即更新预测结果和风险指示器（不等待SHAP）
     output$prob_text <- renderUI({

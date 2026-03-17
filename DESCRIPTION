@@ -1,0 +1,26 @@
+Package: mlr3-shap-prediction-app
+Type: Shiny
+Title: MLR3 Model with SHAP Analysis
+Version: 1.0.0
+Author: Your Name
+Description: A Shiny application for machine learning predictions using MLR3 with SHAP interpretability
+Depends: R (>= 4.0)
+Imports:
+    shiny,
+    mlr3,
+    mlr3learners,
+    mlr3pipelines,
+    mlr3measures,
+    mlr3misc,
+    ranger,
+    xgboost,
+    ggplot2,
+    shapviz,
+    kernelshap,
+    data.table,
+    paradox
+Suggests:
+    testthat,
+    rmarkdown
+Encoding: UTF-8
+License: MIT
