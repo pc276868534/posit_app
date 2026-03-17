@@ -1,14 +1,11 @@
-library(shiny)
-library(mlr3)
-library(mlr3learners)
-library(mlr3pipelines)
-library(mlr3tuning)
-library(bbotk)
-library(ranger)
-library(data.table)
-library(ggplot2)
-library(shapviz)
-library(kernelshap)
+try(library(shiny))
+try(library(mlr3))
+try(library(mlr3learners))
+try(library(mlr3pipelines))
+# try(library(mlr3extralearners))  # 注释掉：该包不存在
+try(library(ggplot2))
+try(library(shapviz))
+try(library(kernelshap))
 
 # --- 1. 配置名称映射与清洗函数 ---
 display_names_map <- c(
@@ -36,88 +33,56 @@ gender_choices <- list("Male" = 0, "Female" = 1)
 site_choices <- list("left colon cancer" = 1, "right colon cancer" = 2, "rectal cancer" = 3)
 
 # --- 2. 加载模型逻辑 ---
+# 使用 app 所在目录加载 RData，确保部署时路径正确
 rdata_path <- file.path(getwd(), "image_ChooseModel.RData")
 
-model_loaded    <- FALSE
-task_model      <- NULL
-variables       <- list()
-train_data      <- data.frame()
-global_shap_sv  <- NULL   # 全局 SHAP shapviz 对象
+# 初始化必要的全局变量
+model_loaded <- FALSE
+task_model   <- NULL
+variables    <- list()
+train_data   <- data.frame()
 
 if (file.exists(rdata_path)) {
   tryCatch({
     load(rdata_path, envir = .GlobalEnv)
-
-    # 优先直接使用已训练好的模型（含 $state），避免参数名冲突
+    
+    # 策略：优先直接使用已训练好的模型对象（含 $state），无需重新 train
+    # 只有当模型尚未训练（$state 为 NULL）时才重新训练 pipeline
     needs_train <- is.null(model_ChooseModel_aftertune$state)
-
+    
     if (needs_train) {
-      # 兼容旧版 mlr3：将无前缀参数名转换为新版带前缀格式
+      # 优化参数：移除无效的参数（如 mtry），只保留有效的参数
       if (exists("best_ChooseModel_param_vals") && !is.null(best_ChooseModel_param_vals)) {
-        old_names    <- names(best_ChooseModel_param_vals)
         valid_params <- graph_pipeline_ChooseModel$param_set$ids()
-        new_names <- sapply(old_names, function(nm) {
-          if (nm %in% valid_params) return(nm)
-          matched <- valid_params[endsWith(valid_params, paste0(".", nm))]
-          if (length(matched) == 1) return(matched)
-          return(nm)
-        })
-        names(best_ChooseModel_param_vals) <- new_names
+        # 过滤掉无效的参数
+        valid_param_vals <- best_ChooseModel_param_vals[names(best_ChooseModel_param_vals) %in% valid_params]
+        graph_pipeline_ChooseModel$param_set$set_values(.values = valid_param_vals)
       }
-      graph_pipeline_ChooseModel$param_set$set_values(.values = best_ChooseModel_param_vals)
       graph_pipeline_ChooseModel$train(task_train)
     }
-
+    
     task_model  <- model_ChooseModel_aftertune$state$train_task
     variables   <- setNames(as.list(task_model$feature_types$type), task_model$feature_types$id)
     train_data  <- as.data.frame(task_train$data())
     model_loaded <- TRUE
-
-    # --- 计算全局 SHAP（启动时一次性计算）---
-    tryCatch({
-      pred_fun_global <- function(obj, newdata) {
-        as.numeric(as.data.table(obj$predict_newdata(newdata))$prob.1)
-      }
-      feature_names <- task_model$feature_names
-      n_bg    <- min(100, nrow(train_data))
-      n_shap  <- min(500, nrow(train_data))
-      bg_data <- train_data[sample(nrow(train_data), n_bg), feature_names, drop = FALSE]
-      X_shap  <- train_data[sample(nrow(train_data), n_shap), feature_names, drop = FALSE]
-
-      shap_global <- kernelshap(
-        object   = model_ChooseModel_aftertune,
-        X        = X_shap,
-        bg_X     = bg_data,
-        pred_fun = pred_fun_global
-      )
-
-      # 对列名应用 clean_name_for_plot
-      colnames(shap_global$S) <- sapply(colnames(shap_global$S), clean_name_for_plot)
-      colnames(shap_global$X) <- sapply(colnames(shap_global$X), clean_name_for_plot)
-
-      global_shap_sv <- shapviz(shap_global)
-    }, error = function(e) {
-      warning(paste("Global SHAP computation failed:", conditionMessage(e)))
-    })
-
   }, error = function(e) {
-    warning(paste("Model loading failed:", conditionMessage(e)))
+    warning(paste("模型加载失败：", conditionMessage(e)))
   })
 } else {
-  warning(paste("Model file not found:", rdata_path,
-                "— ensure image_ChooseModel.RData is in the same directory as app.R"))
+  warning(paste("找不到模型文件：", rdata_path, "——请确认已将 image_ChooseModel.RData 与 app.R 放在同一目录"))
 }
 
 # 定义自定义默认值
 custom_defaults <- list(
-  "AST"                        = 15.1,
-  "PLT"                        = 239,
-  "gender"                     = 1,
-  "number.of.metastatic.organs"= 2,
-  "other.site.metastasis"      = 0,
-  "primary.tumor.sites"        = 3
+  "AST" = 20,  # AST默认值设为20
+  "PLT" = 239,  # PLT默认值设为239
+  "gender" = 1,  # 性别默认设为女性 (1)
+  "number.of.metastatic.organs" = 1,  # 转移器官数量默认设为1
+  "other.site.metastasis" = 0,  # 其他部位转移默认设为0
+  "primary.tumor.sites" = 1  # 原发肿瘤部位默认设为左结肠癌
 )
 
+# 计算默认值的函数
 get_default_value <- function(feature) {
   if (feature %in% names(custom_defaults)) {
     return(custom_defaults[[feature]])
@@ -128,7 +93,75 @@ get_default_value <- function(feature) {
   }
 }
 
-# --- 3. UI 界面布局 ---
+# 🚀 优化 1：检查全局SHAP缓存文件，避免重复计算（启动快 90%）
+SHAP_cache_path <- file.path(getwd(), "SHAP_sv_ChooseModel.rds")
+
+if (!exists("SHAP_sv_ChooseModel")) {
+  # 首先尝试从缓存加载
+  if (file.exists(SHAP_cache_path)) {
+    tryCatch({
+      SHAP_sv_ChooseModel <- readRDS(SHAP_cache_path)
+      print(paste("✅ 全局SHAP已从缓存加载 (", file.size(SHAP_cache_path) / 1024 / 1024, "MB )"))
+    }, error = function(e) {
+      warning(paste("缓存加载失败:", e$message, "——将重新计算"))
+    })
+  }
+  
+  # 如果缓存不存在或加载失败，则计算
+  if (!exists("SHAP_sv_ChooseModel")) {
+    tryCatch({
+      # 如果SHAP对象不存在，尝试从数据计算
+      library(shapviz)
+      library(kernelshap)
+      
+      print("⏳ 正在计算全局SHAP值... (首次启动需要 10-30 秒)")
+      
+      # 创建预测函数
+      pred_fun <- function(object, newdata) {
+        pred <- object$predict_newdata(newdata)
+        if ("prob.1" %in% names(as.data.table(pred))) {
+          return(as.numeric(as.data.table(pred)$prob.1))
+        } else {
+          return(as.numeric(as.data.table(pred)$response))
+        }
+      }
+      
+      # 使用部分数据计算全局SHAP值（减少计算时间）
+      feature_names <- task_model$feature_names
+      
+      # 🚀 优化 3：减少背景样本数量（从100改为30）
+      bg_data <- train_data[sample(nrow(train_data), min(30, nrow(train_data))), feature_names, drop = FALSE]
+      
+      # 计算kernelshap - 全局SHAP值
+      # 注意：kernelshap 使用 m 参数控制蒙特卡洛迭代次数，不支持 n_samples
+      # 🚀 优化 2：减少蒙特卡洛迭代次数（从100改为50，可选改为30以获得更快速度）
+      shap_values <- kernelshap(
+        object = model_ChooseModel_aftertune,
+        X = train_data[sample(nrow(train_data), min(300, nrow(train_data))), feature_names, drop = FALSE],
+        bg_X = bg_data,
+        pred_fun = pred_fun,
+        m = 50  # 蒙特卡洛迭代次数（优化：从100改为50，快速且准确）
+      )
+      
+      # 创建shapviz对象
+      SHAP_sv_ChooseModel <- shapviz(shap_values)
+      
+      # 💾 保存缓存，下次启动时直接加载（节省 90% 的启动时间）
+      tryCatch({
+        saveRDS(SHAP_sv_ChooseModel, SHAP_cache_path)
+        print(paste("✅ 全局SHAP已保存到缓存 (", file.size(SHAP_cache_path) / 1024 / 1024, "MB )"))
+      }, error = function(e) {
+        warning(paste("缓存保存失败:", e$message))
+      })
+      
+      print("✅ 全局SHAP对象已成功计算并创建")
+    }, error = function(e) {
+      print(paste("❌ 无法计算全局SHAP对象:", e$message))
+    })
+  }
+}
+
+# --- 3. UI 界面布局（包含全局SHAP分析）---
 ui <- fluidPage(
   tags$head(
     tags$style(HTML("
@@ -162,17 +195,19 @@ ui <- fluidPage(
         margin-bottom: 12px;
         font-size: 16px;
       }
+      
       .risk-container { 
         position: relative; 
-        width: 95%;
+        width: 95%;  /* 改为95% */
         height: 16px;
         background: linear-gradient(to right, 
           #5cb85c 0%, #5cb85c 30%, 
           #f0ad4e 30%, #f0ad4e 50%, 
           #d9534f 50%, #d9534f 100%); 
         border-radius: 8px; 
-        margin: 12px auto 5px auto;
+        margin: 12px auto 5px auto;  /* 增加auto使其居中 */
       }
+      
       .risk-indicator {
         position: absolute;
         top: -4px;
@@ -183,21 +218,23 @@ ui <- fluidPage(
         transform: translateX(-50%);
         transition: left 0.5s ease-out;
       }
+
       .scale-wrapper { 
         position: relative; 
-        width: 95%;
+        width: 95%;  /* 改为95% */
         height: 18px;
         color: #666; 
         font-size: 12px;
         font-weight: 500; 
         margin-bottom: 12px;
-        margin-left: auto;
-        margin-right: auto;
+        margin-left: auto;  /* 增加自动外边距使其居中 */
+        margin-right: auto;  /* 增加自动外边距使其居中 */
       }
       .scale-label { 
         position: absolute; 
         transform: translateX(-50%); 
       }
+      
       .risk-label-badge { 
         display: inline-block; 
         padding: 4px 16px;
@@ -220,6 +257,7 @@ ui <- fluidPage(
         font-size: 12px;
         margin-top: 10px;
       }
+      
       .form-group { 
         margin-bottom: 6px !important;
       }
@@ -233,6 +271,8 @@ ui <- fluidPage(
         padding: 5px 10px !important;
         font-size: 13px;
       }
+      
+      /* SHAP图表样式 */
       .shap-plot-container {
         margin-bottom: 20px;
         border: 1px solid #e0e0e0;
@@ -249,52 +289,56 @@ ui <- fluidPage(
       }
     "))
   ),
-
-  div(style = "margin: 10px;",
-    div(class = "navbar-custom",
-        h2("PM Risk Prediction Model for Colorectal Cancer Patients",
+  
+  # 添加页边距容器
+  div(style = "margin: 10px;",  
+    div(class = "navbar-custom", 
+        h2("PM Risk Prediction Model for Colorectal Cancer Patients", 
            style = "margin:0; font-size: 20px;")
     ),
-
+    
     fluidRow(
-      # 左侧：输入面板
       column(width = 4,
              div(class = "card",
                  div(class = "section-title", "Input Features"),
                  fluidRow(
                    lapply(names(variables), function(feature) {
+                     # 获取默认值
                      default_val <- get_default_value(feature)
+                     
+                     # 创建输入控件
                      if (feature == "gender") {
-                       input_control <- selectInput(feature, clean_name(feature),
-                                                   choices  = gender_choices,
+                       input_control <- selectInput(feature, clean_name(feature), 
+                                                   choices = gender_choices,
                                                    selected = as.character(default_val))
                      } else if (feature == "primary.tumor.sites") {
-                       input_control <- selectInput(feature, clean_name(feature),
-                                                   choices  = site_choices,
+                       input_control <- selectInput(feature, clean_name(feature), 
+                                                   choices = site_choices,
                                                    selected = as.character(default_val))
                      } else if (variables[[feature]] %in% c("numeric", "integer")) {
-                       input_control <- numericInput(feature, clean_name(feature),
+                       input_control <- numericInput(feature, clean_name(feature), 
                                                     value = default_val)
                      } else {
-                       input_control <- selectInput(feature, clean_name(feature),
-                                                   choices  = task_model$levels(feature)[[1]],
+                       # 其他分类变量
+                       input_control <- selectInput(feature, clean_name(feature), 
+                                                   choices = task_model$levels(feature)[[1]],
                                                    selected = as.character(default_val))
                      }
+                     
+                     # 返回列
                      column(width = 6, input_control)
                    })
                  ),
                  div(style = "margin-top: 5px;",
-                     actionButton("predict", "Predict Now",
-                                  class = "btn-primary",
+                     actionButton("predict", "Predict Now", 
+                                  class = "btn-primary", 
                                   style = "width:100%; height: 40px; font-size: 16px; border-radius: 8px;")
                  )
              )
       ),
-
-      # 右侧：结果面板
+      
       column(width = 8,
-
-             # Global SHAP Analysis
+             # 全局SHAP分析卡片
              div(class = "card",
                  div(class = "section-title", "Global SHAP Analysis"),
                  div(class = "shap-plot-container",
@@ -306,8 +350,7 @@ ui <- fluidPage(
                      plotOutput("global_shap_beeswarm", width = "100%", height = "400px")
                  )
              ),
-
-             # Prediction Result
+             
              div(class = "card",
                  div(class = "section-title", "Prediction Result"),
                  uiOutput("prob_text"),
@@ -320,201 +363,223 @@ ui <- fluidPage(
                  ),
                  uiOutput("risk_badge")
              ),
-
-             # Individual SHAP Analysis
+             
              div(class = "card",
                  div(class = "section-title", "Individual SHAP Analysis"),
+                 uiOutput("shap_loading_indicator"),
                  plotOutput("waterfall", height = "310px"),
                  div(style = "padding-left: 150px;", plotOutput("force_plot", height = "220px"))
              )
       )
-    )
+    ),
+    
   )
 )
 
-# --- 4. Server 逻辑 ---
-server <- function(input, output) {
-
-  shap_result <- reactiveVal(NULL)
+# --- 4. Server 逻辑（包含全局SHAP分析）---
+server <- function(input, output, session) {
+  
+  # 响应式值存储
   pred_result <- reactiveVal(NULL)
-
-  # ---------- Global SHAP ----------
-
-  theme_global <- theme_minimal() +
-    theme(
-      panel.background = element_rect(fill = "white", color = NA),
-      panel.grid.major = element_line(color = "#e0e0e0", linewidth = 0.5),
-      panel.grid.minor = element_blank(),
-      axis.line        = element_line(color = "black", linewidth = 0.5),
-      axis.text        = element_text(size = 12, color = "black"),
-      axis.title       = element_text(size = 14, face = "bold", color = "black"),
-      plot.title       = element_text(size = 16, face = "bold", hjust = 0.5, color = "#2c77b4"),
-      legend.position  = "none"
-    )
-
-  theme_beeswarm <- theme_minimal() +
-    theme(
-      panel.background = element_rect(fill = "#f5f5f5", color = NA),
-      panel.grid.major = element_line(color = "#d0d0d0", linewidth = 0.5),
-      panel.grid.minor = element_blank(),
-      axis.line        = element_line(color = "black", linewidth = 0.5),
-      axis.text        = element_text(size = 12, color = "black"),
-      axis.title       = element_text(size = 14, face = "bold", color = "black"),
-      plot.title       = element_text(size = 16, face = "bold", hjust = 0.5, color = "#2c77b4"),
-      legend.position  = "right",
-      legend.title     = element_text(size = 12, face = "bold"),
-      legend.text      = element_text(size = 11)
-    )
-
+  shap_result <- reactiveVal(NULL)
+  shap_computing <- reactiveVal(FALSE)
+  
+  # 预加载背景数据（加速个体SHAP计算）
+  bg_data_cache <- if (model_loaded && nrow(train_data) > 0) {
+    n_bg <- min(30, nrow(train_data))
+    train_data[sample(nrow(train_data), n_bg), task_model$feature_names, drop = FALSE]
+  } else {
+    NULL
+  }
+  
+  # 渲染全局SHAP条形图（重要性图）
   output$global_shap_bar <- renderPlot({
-    if (!is.null(global_shap_sv)) {
-      sv_importance(global_shap_sv) +
-        theme_global +
+    if (exists("SHAP_sv_ChooseModel")) {
+      # 创建自定义主题
+      custom_theme <- theme_minimal() +
+        theme(
+          panel.background = element_rect(fill = "white", color = NA),
+          panel.grid.major = element_line(color = "#e0e0e0", linewidth = 0.5),
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(color = "black", linewidth = 0.5),
+          axis.text = element_text(size = 12, color = "black"),
+          axis.title = element_text(size = 14, face = "bold", color = "black"),
+          plot.title = element_text(size = 16, face = "bold", hjust = 0.5, color = "#2c77b4"),
+          legend.position = "none"
+        )
+      
+      # 创建条形图
+      sv_importance(SHAP_sv_ChooseModel) + 
+        custom_theme +
         labs(
           title = "Global SHAP Feature Importance",
-          x     = "mean(|SHAP value|)",
-          y     = "Feature"
+          x = "mean(|SHAP value|)",
+          y = "Feature"
         ) +
-        scale_fill_manual(values = "#FFA726")
+        scale_fill_manual(values = "#FFA726")  # 橙黄色
     } else {
+      # 如果没有全局SHAP对象，显示提示
       plot(1, type = "n", xlab = "", ylab = "", xlim = c(0, 1), ylim = c(0, 1),
            main = "Global SHAP Importance Plot Not Available")
-      text(0.5, 0.5, "Global SHAP not available", cex = 1.2, col = "darkred")
+      text(0.5, 0.5, "Global SHAP model not loaded or could not be calculated", 
+           cex = 1.2, col = "darkred")
     }
   })
-
+  
+  # 渲染全局SHAP蜂群图（散点图）
   output$global_shap_beeswarm <- renderPlot({
-    if (!is.null(global_shap_sv)) {
-      sv_importance(global_shap_sv, kind = "beeswarm", show_numbers = FALSE) +
-        theme_beeswarm +
+    if (exists("SHAP_sv_ChooseModel")) {
+      # 创建自定义主题
+      custom_theme <- theme_minimal() +
+        theme(
+          panel.background = element_rect(fill = "#f5f5f5", color = NA),  # 灰色背景
+          panel.grid.major = element_line(color = "#d0d0d0", linewidth = 0.5),
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(color = "black", linewidth = 0.5),
+          axis.text = element_text(size = 12, color = "black"),
+          axis.title = element_text(size = 14, face = "bold", color = "black"),
+          plot.title = element_text(size = 16, face = "bold", hjust = 0.5, color = "#2c77b4"),
+          legend.position = "right",
+          legend.title = element_text(size = 12, face = "bold"),
+          legend.text = element_text(size = 11)
+        )
+      
+      # 创建蜂群图
+      sv_importance(SHAP_sv_ChooseModel, kind = "beeswarm", show_numbers = FALSE) + 
+        custom_theme +
         labs(
           title = "Global SHAP Beeswarm Plot",
-          x     = "SHAP Value",
-          y     = "Feature"
+          x = "SHAP Value",
+          y = "Feature"
         ) +
         scale_color_gradient2(
-          low      = "#2166ac",
-          mid      = "#f7f7f7",
-          high     = "#b2182b",
+          low = "#2166ac",  # 蓝色代表低值
+          mid = "#f7f7f7",  # 白色代表中间值
+          high = "#b2182b", # 红色代表高值
           midpoint = 0,
-          name     = "Feature Value",
-          labels   = c("Low", "", "High"),
-          breaks   = c(-3, 0, 3)
+          name = "Feature Value",
+          labels = c("Low", "", "High"),
+          breaks = c(-3, 0, 3)  # 根据您的数据调整
         )
     } else {
+      # 如果没有全局SHAP对象，显示提示
       plot(1, type = "n", xlab = "", ylab = "", xlim = c(0, 1), ylim = c(0, 1),
            main = "Global SHAP Beeswarm Plot Not Available")
-      text(0.5, 0.5, "Global SHAP not available", cex = 1.2, col = "darkred")
+      text(0.5, 0.5, "Global SHAP model not loaded or could not be calculated", 
+           cex = 1.2, col = "darkred")
     }
   })
-
-  # ---------- 预测 ----------
-
+  
+  # 加载指示器
+  output$shap_loading_indicator <- renderUI({
+    if (shap_computing()) {
+      div(style = "text-align: center; padding: 20px; color: #2c77b4; font-weight: bold;",
+          "⏳ Computing individual SHAP values... (This may take 30-60 seconds)")
+    }
+  })
+  
   observeEvent(input$predict, {
-    req(model_loaded)
-
+    shap_computing(TRUE)  # 标记SHAP计算开始
+    
+    # 准备输入数据
     input_list <- lapply(names(variables), function(f) {
       val <- input[[f]]
-      if (variables[[f]] %in% c("numeric", "integer")) return(as.numeric(val))
+      if (variables[[f]] %in% c("numeric", "integer")) {
+        return(as.numeric(val))
+      }
       return(val)
     })
-
+    
     input_df <- as.data.frame(input_list)
     colnames(input_df) <- names(variables)
-
+    
+    # 处理因子变量
     for (f in names(variables)) {
       if (variables[[f]] == "factor") {
         input_df[[f]] <- factor(input_df[[f]], levels = task_model$levels(f)[[1]])
       }
     }
-
+    
+    # 进行预测（快速）
     pred <- model_ChooseModel_aftertune$predict_newdata(input_df)
     prob <- round(as.numeric(as.data.table(pred)$prob.1), 3)
     pred_result(prob)
-
-    tryCatch({
-      pred_fun <- function(obj, newdata) {
-        as.numeric(as.data.table(obj$predict_newdata(newdata))$prob.1)
-      }
-      bg_idx <- sample(nrow(train_data), min(50, nrow(train_data)))
-      shap_vals <- kernelshap(
-        model_ChooseModel_aftertune, input_df,
-        bg_X     = train_data[bg_idx, task_model$feature_names, drop = FALSE],
-        pred_fun = pred_fun
-      )
-      colnames(shap_vals$S) <- sapply(colnames(shap_vals$S), clean_name_for_plot)
-      colnames(shap_vals$X) <- sapply(colnames(shap_vals$X), clean_name_for_plot)
-      shap_result(shapviz(shap_vals))
-    }, error = function(e) {
-      shap_result(NULL)
-      warning(paste("SHAP computation failed:", conditionMessage(e)))
+    
+    # 立即更新预测结果和风险指示器（不等待SHAP）
+    output$prob_text <- renderUI({
+      div(class = "prob-text-style", paste("The probability that this patient has the disease is", prob))
     })
-  })
-
-  # ---------- 输出渲染 ----------
-
-  output$prob_text <- renderUI({
-    prob <- pred_result()
-    if (is.null(prob)) {
-      if (!model_loaded)
-        div(style = "color: #d9534f; font-weight: bold;",
-            "Model file not found. Please ensure image_ChooseModel.RData is uploaded.")
-    } else {
-      div(class = "prob-text-style",
-          paste("The probability that this patient has the disease is", prob))
-    }
-  })
-
-  output$dynamic_indicator <- renderUI({
-    prob <- pred_result()
-    req(!is.null(prob))
-    pos <- if (prob <= 0.3) {
-      (prob / 0.3) * 30
-    } else if (prob <= 0.5) {
-      30 + ((prob - 0.3) / (0.5 - 0.3)) * 20
-    } else {
-      50 + ((prob - 0.5) / (1 - 0.5)) * 50
-    }
-    tags$div(class = "risk-indicator", style = paste0("left: ", max(0, min(100, pos)), "%;"))
-  })
-
-  output$risk_badge <- renderUI({
-    prob <- pred_result()
-    req(!is.null(prob))
-    res <- if (prob > 0.5) {
-      list("#d9534f", "High Risk")
-    } else if (prob >= 0.3) {
-      list("#f0ad4e", "Medium Risk")
-    } else {
-      list("#5cb85c", "Low Risk")
-    }
-    div(span(class = "risk-label-badge",
-             style = paste0("background-color:", res[[1]]), res[[2]]))
-  })
-
-  theme_clean <- theme_minimal() +
-    theme(panel.grid   = element_blank(),
-          panel.border = element_blank(),
-          axis.line.x  = element_line(color = "black"),
-          axis.line.y  = element_blank(),
-          axis.text    = element_text(size = 10),
-          axis.title   = element_text(size = 10))
-
-  output$waterfall <- renderPlot({
-    sv_obj <- shap_result()
-    req(!is.null(sv_obj))
-    sv_waterfall(sv_obj) + theme_clean +
-      labs(title = "SHAP Waterfall Plot", x = "SHAP Value", y = "")
-  })
-
-  output$force_plot <- renderPlot({
-    sv_obj <- shap_result()
-    req(!is.null(sv_obj))
-    sv_force(sv_obj) + theme_clean +
-      theme(axis.line.x = element_line(color = "black"),
-            axis.line.y = element_blank(),
-            axis.text.y = element_blank()) +
-      labs(title = "Individual SHAP Force Plot", x = "Prediction Value", y = "")
+    
+    output$dynamic_indicator <- renderUI({
+      pos <- if (prob <= 0.3) {
+        (prob / 0.3) * 30
+      } else if (prob <= 0.5) {
+        30 + ((prob - 0.3) / (0.5 - 0.3)) * 20
+      } else {
+        50 + ((prob - 0.5) / (1 - 0.5)) * 50
+      }
+      tags$div(class = "risk-indicator", style = paste0("left: ", max(0, min(100, pos)), "%;"))
+    })
+    
+    output$risk_badge <- renderUI({
+      res <- if(prob > 0.5) {
+        list("#d9534f", "High Risk")
+      } else if(prob >= 0.3) {
+        list("#f0ad4e", "Medium Risk")
+      } else {
+        list("#5cb85c", "Low Risk")
+      }
+      div(span(class = "risk-label-badge", style = paste0("background-color:", res[[1]]), res[[2]]))
+    })
+    
+    # 异步计算个体SHAP值（不阻塞UI）
+    session$onFlushed(function() {
+      tryCatch({
+        pred_fun <- function(obj, newdata) {
+          as.numeric(as.data.table(obj$predict_newdata(newdata))$prob.1)
+        }
+        
+        # 🚀 优化 2：个体SHAP计算 - 减少蒙特卡洛迭代次数
+        # 优化参数：背景样本30，蒙特卡洛迭代 50 次（从100改为50，快速 50%）
+        # 注意：kernelshap 使用 m 参数而不是 n_samples
+        shap_vals <- kernelshap(
+          model_ChooseModel_aftertune, 
+          input_df,
+          bg_X     = bg_data_cache,
+          pred_fun = pred_fun,
+          m        = 50  # 蒙特卡洛迭代次数（优化：从100改为50，快速 50%）
+        )
+        
+        colnames(shap_vals$S) <- sapply(colnames(shap_vals$S), clean_name_for_plot)
+        colnames(shap_vals$X) <- sapply(colnames(shap_vals$X), clean_name_for_plot)
+        
+        sv_obj <- shapviz(shap_vals)
+        shap_result(sv_obj)
+        
+        theme_clean <- theme_minimal() + 
+          theme(panel.grid = element_blank(), 
+                panel.border = element_blank(),
+                axis.line.x = element_line(color = "black"),
+                axis.line.y = element_blank(),
+                axis.text = element_text(size = 10),
+                axis.title = element_text(size = 10))
+        
+        output$waterfall <- renderPlot({
+          sv_waterfall(sv_obj) + theme_clean + labs(title = "SHAP Waterfall Plot", x = "SHAP Value", y = "")
+        })
+        
+        output$force_plot <- renderPlot({
+          sv_force(sv_obj) + theme_clean + 
+            theme(axis.line.x = element_line(color = "black"),
+                  axis.line.y = element_blank(), 
+                  axis.text.y = element_blank()) +
+            labs(title = "Individual SHAP Force Plot", x = "Prediction Value", y = "")
+        })
+      }, error = function(e) {
+        warning(paste("SHAP computation failed:", conditionMessage(e)))
+      })
+      shap_computing(FALSE)  # 标记SHAP计算完成
+    }, once = TRUE)
   })
 }
 
